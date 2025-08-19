@@ -167,10 +167,15 @@ def build_snapshot():
         "parts": parts
     }
     os.makedirs("public", exist_ok=True)
-    with open("public/index.html", "w") as f:
-    f.write('<meta http-equiv="refresh" content="0; url=parts.json">')
-        json.dump(out, f, ensure_ascii=False, indent=2)
 
+    # 1) Write the JSON snapshot
+    with open("public/parts.json", "w", encoding="utf-8") as fjson:
+        json.dump(out, fjson, ensure_ascii=False, indent=2)
+    
+    # 2) (Optional) Write a tiny index that redirects to parts.json
+    with open("public/index.html", "w", encoding="utf-8") as fhtml:
+        fhtml.write('<meta http-equiv="refresh" content="0; url=parts.json">')
+    
     print(f"Wrote public/parts.json with {len(models)} models and {len(parts)} parts.")
 
 if __name__ == "__main__":
