@@ -1,9 +1,7 @@
 name: Build parts JSON
-
 on:
-  schedule:
-    - cron: "*/30 * * * *"   # every 30 minutes (adjust as you like)
-  workflow_dispatch: {}       # manual trigger
+  schedule: [ { cron: "*/30 * * * *" } ]
+  workflow_dispatch: {}
 
 jobs:
   build:
@@ -11,21 +9,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
+        with: { python-version: "3.11" }
+      - run: pip install requests
       - name: Build JSON
         env:
           LARK_APP_ID:     ${{ secrets.LARK_APP_ID }}
           LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
           LARK_BASE_ID:    ${{ secrets.LARK_BASE_ID }}
           LARK_TABLE_ID:   ${{ secrets.LARK_TABLE_ID }}
-        run: |
-          python build_parts_json.py
-      - name: Deploy to Pages
+        run: python build_parts_json.py
+      - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
