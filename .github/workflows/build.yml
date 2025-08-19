@@ -1,7 +1,13 @@
-name: Build parts JSON
+name: Build & Deploy parts.json
 on:
-  schedule: [ { cron: "*/30 * * * *" } ]
-  workflow_dispatch: {}
+  workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -9,7 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+        with:
+          python-version: "3.11"
       - run: pip install requests
       - name: Build JSON
         env:
@@ -18,9 +25,24 @@ jobs:
           LARK_BASE_ID:    ${{ secrets.LARK_BASE_ID }}
           LARK_TABLE_ID:   ${{ secrets.LARK_TABLE_ID }}
         run: python build_parts_json.py
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+
+      # ✅ Add this debug step here
+      - name: Show built files
+        run: |
+          echo "Listing ./public"
+          ls -la ./public || true
+          echo "Preview parts.json"
+          head -c 200 ./public/parts.json || true
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
-          publish_branch: gh-pages
+          path: ./public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/deploy-pages@v4
