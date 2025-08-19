@@ -25,20 +25,16 @@ LARK_TABLE_ID = _env("LARK_TABLE_ID")  # parts table
 AUTH_URL = "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal"
 
 def get_lark_headers():
-    r = requests.post(AUTH_URL, json={"app_id": APP_ID, "app_secret": APP_SECRET}, timeout=30)
-    # Lark often returns 200 with {code,msg} on errors, so don't only rely on status
+    app_id = _env("LARK_APP_ID")
+    app_secret = _env("LARK_APP_SECRET")
+    r = requests.post(AUTH_URL, json={"app_id": app_id, "app_secret": app_secret}, timeout=30)
     try:
         data = r.json()
     except Exception:
         raise RuntimeError(f"Lark auth HTTP {r.status_code}: {r.text[:200]}")
     token = data.get("tenant_access_token")
     if not token:
-        code = data.get("code")
-        msg  = data.get("msg")
-        raise RuntimeError(
-            f"Lark auth failed (code={code}) msg={msg}. "
-            f"Check: app is Internal (self-built), IDs correct, no trailing spaces."
-        )
+        raise RuntimeError(f"Lark auth failed (code={data.get('code')}): {data.get('msg')}")
     return {"Authorization": f"Bearer {token}"}
 
 def _to_float(x, default=0.0):
@@ -57,7 +53,9 @@ def _slug(s):
 def load_lark_spare_parts(headers):
     all_rows = []
     page_token = None
-    base_url = f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_BASE_ID}/tables/{LARK_TABLE_ID}/records"
+    base_id  = _env("LARK_BASE_ID")
+    table_id = _env("LARK_TABLE_ID")
+    base_url = f"https://open.larksuite.com/open-apis/bitable/v1/apps/{base_id}/tables/{table_id}/records"
 
     while True:
         params = {"page_size": 500}
@@ -167,6 +165,11 @@ def build_snapshot():
         "parts": parts
     }
     os.makedirs("public", exist_ok=True)
+    with open("public/parts.json", "w", encoding="utf-8") as fjson:
+        json.dump(out, fjson, ensure_ascii=False, indent=2)
+    with open("public/index.html", "w", encoding="utf-8") as fhtml:
+        fhtml.write('<meta http-equiv="refresh" content="0; url=parts.json">')
+
 
     # 1) Write the JSON snapshot
     with open("public/parts.json", "w", encoding="utf-8") as fjson:
