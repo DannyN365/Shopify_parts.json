@@ -1,23 +1,44 @@
 import os, json, re, requests
 from datetime import datetime, timezone
 
-# --- ENV (set these as GitHub Actions secrets) ---
-APP_ID         = os.environ["LARK_APP_ID"]
-APP_SECRET     = os.environ["LARK_APP_SECRET"]
-LARK_BASE_ID   = os.environ["LARK_BASE_ID"]
-LARK_TABLE_ID  = os.environ["LARK_TABLE_ID"]     # parts table (the one you query in load_lark_spare_parts)
+# --- Optional for local runs; ignored in Actions if no .env present ---
+try:
+    from dotenv import load_dotenv  # pip install python-dotenv (local only)
+    load_dotenv()
+except Exception:
+    pass
 
-# --- Helpers from your Streamlit code (trimmed/reused) ---
+def _env(name: str) -> str:
+    val = os.environ.get(name, "")
+    # strip spaces, tabs, CRLF that often sneak into secrets
+    val = val.strip().replace("\r", "").replace("\n", "")
+    if not val:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return val
+
+# --- ENV (set as GitHub Action secrets) ---
+APP_ID        = _env("LARK_APP_ID")
+APP_SECRET    = _env("LARK_APP_SECRET")
+LARK_BASE_ID  = _env("LARK_BASE_ID")
+LARK_TABLE_ID = _env("LARK_TABLE_ID")  # parts table
+
+AUTH_URL = "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal"
+
 def get_lark_headers():
-    r = requests.post(
-        "https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal",
-        json={"app_id": APP_ID, "app_secret": APP_SECRET},
-        timeout=30
-    )
-    r.raise_for_status()
-    token = r.json().get("tenant_access_token")
+    r = requests.post(AUTH_URL, json={"app_id": APP_ID, "app_secret": APP_SECRET}, timeout=30)
+    # Lark often returns 200 with {code,msg} on errors, so don't only rely on status
+    try:
+        data = r.json()
+    except Exception:
+        raise RuntimeError(f"Lark auth HTTP {r.status_code}: {r.text[:200]}")
+    token = data.get("tenant_access_token")
     if not token:
-        raise RuntimeError(f"Lark auth failed: {r.text}")
+        code = data.get("code")
+        msg  = data.get("msg")
+        raise RuntimeError(
+            f"Lark auth failed (code={code}) msg={msg}. "
+            f"Check: app is Internal (self-built), IDs correct, no trailing spaces."
+        )
     return {"Authorization": f"Bearer {token}"}
 
 def _to_float(x, default=0.0):
@@ -34,7 +55,6 @@ def _slug(s):
     return re.sub(r"-+", "-", s).strip("-")
 
 def load_lark_spare_parts(headers):
-    """Return a list of dicts with the columns you used in Streamlit."""
     all_rows = []
     page_token = None
     base_url = f"https://open.larksuite.com/open-apis/bitable/v1/apps/{LARK_BASE_ID}/tables/{LARK_TABLE_ID}/records"
@@ -43,22 +63,19 @@ def load_lark_spare_parts(headers):
         params = {"page_size": 500}
         if page_token:
             params["page_token"] = page_token
-
         res = requests.get(base_url, headers=headers, params=params, timeout=60)
         res.raise_for_status()
-        data = res.json().get("data", {})
+        data = res.json().get("data", {}) or {}
         items = data.get("items", []) or []
         if not items:
             break
 
         for rec in items:
             f = rec.get("fields", {}) or {}
-
             part_num = f.get("PN")
             if not part_num:
                 continue
 
-            # Model number & name (as in your code)
             mn_raw = f.get("Model number", {})
             model_number = mn_raw.get("text") if isinstance(mn_raw, dict) else str(mn_raw or "")
             model_name   = f.get("Model Name-English", "") or ""
@@ -66,7 +83,6 @@ def load_lark_spare_parts(headers):
             price_eur = _to_float(f.get("Price (EUR)"), 0.0)
             stock     = int(f.get("Current stock", 0) or 0)
 
-            # Picture (first file)
             pic_url = ""
             pics = f.get("Pictures", [])
             if isinstance(pics, list) and pics and isinstance(pics[0], dict):
@@ -82,7 +98,7 @@ def load_lark_spare_parts(headers):
                 "Price (EUR)": price_eur
             })
 
-        page_token = data.get("page_token")
+        page_token = (data.get("page_token") or "").strip()
         if not page_token:
             break
 
@@ -92,28 +108,21 @@ def build_snapshot():
     headers = get_lark_headers()
     rows = load_lark_spare_parts(headers)
 
-    # Build models list and a fast lookup for model ids
-    models_by_key = {}  # key = (model_number or model_name)
+    models_by_key = {}
     def ensure_model_id(model_number, model_name):
         key = (model_number or model_name or "").strip()
         if not key:
             return None
         if key not in models_by_key:
-            # prefer model_number as ID; fall back to slug of name
             model_id = _slug(model_number) if model_number else _slug(model_name)
-            # make sure unique even if duplicates
             orig = model_id
             i = 2
             while any(m["id"] == model_id for m in models_by_key.values()):
                 model_id = f"{orig}-{i}"
                 i += 1
-            models_by_key[key] = {
-                "id": model_id,
-                "name": model_name or model_number
-            }
+            models_by_key[key] = {"id": model_id, "name": model_name or model_number}
         return models_by_key[key]["id"]
 
-    # Aggregate parts → compatible models
     parts_by_sku = {}
     for r in rows:
         sku = r["Part #"]
@@ -130,7 +139,6 @@ def build_snapshot():
         if mid:
             parts_by_sku[sku]["compatible_models"].add(mid)
 
-        # Keep latest non-empty values for price/stock/image/name if they improve
         if r.get("Price (EUR)"):
             parts_by_sku[sku]["price_eur"] = float(r["Price (EUR)"])
         if isinstance(r.get("In Stock"), int):
@@ -140,7 +148,6 @@ def build_snapshot():
         if r.get("Part Name"):
             parts_by_sku[sku]["name"] = r["Part Name"]
 
-    # Finalize structures
     models = sorted(models_by_key.values(), key=lambda x: x["name"].lower())
     parts = []
     for p in parts_by_sku.values():
