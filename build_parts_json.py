@@ -167,7 +167,8 @@ def build_snapshot():
         "parts": parts
     }
     os.makedirs("public", exist_ok=True)
-    with open("public/parts.json", "w", encoding="utf-8") as f:
+    with open("public/index.html", "w") as f:
+    f.write('<meta http-equiv="refresh" content="0; url=parts.json">')
         json.dump(out, f, ensure_ascii=False, indent=2)
 
     print(f"Wrote public/parts.json with {len(models)} models and {len(parts)} parts.")
