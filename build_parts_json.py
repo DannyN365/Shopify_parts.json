@@ -17,8 +17,8 @@ def _env(name: str) -> str:
     return val
 
 # --- ENV (set as GitHub Action secrets) ---
-LARK_APP_ID        = _env("LARK_APP_ID")
-LARK_APP_SECRET    = _env("LARK_APP_SECRET")
+APP_ID        = _env("LARK_APP_ID")
+APP_SECRET    = _env("LARK_APP_SECRET")
 LARK_BASE_ID  = _env("LARK_BASE_ID")
 LARK_TABLE_ID = _env("LARK_TABLE_ID")  # parts table
 
