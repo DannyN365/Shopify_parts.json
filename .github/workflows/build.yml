@@ -49,6 +49,12 @@ jobs:
           LARK_BASE_ID:    ${{ secrets.LARK_BASE_ID }}
           LARK_TABLE_ID:   ${{ secrets.LARK_TABLE_ID }}
         run: python build_parts_json.py
+        
+      - name: Build Shopify SKU map
+        env:
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_ADMIN_TOKEN: ${{ secrets.SHOPIFY_ADMIN_TOKEN }}
+        run: python build_shopify_map.py
 
       # ✅ Add this debug step here
       - name: Show built files
