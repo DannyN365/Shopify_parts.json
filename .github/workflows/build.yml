@@ -1,8 +1,8 @@
-name: Build & Deploy parts.json
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: "*/30 * * * *"
+#name: Build & Deploy parts.json
+#on:
+#  workflow_dispatch:
+#  schedule:
+#    - cron: "*/30 * * * *"
 
 permissions:
   contents: read
